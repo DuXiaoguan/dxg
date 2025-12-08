@@ -11,39 +11,62 @@
 
 ```mermaid
 graph TD
-    %% 用户访问层
-    UserGlobal(("公网用户")) -->|"HTTPS/443"| CF["Cloudflare CDN/DNS"]
-    UserAdmin(("你自己/管理员")) -->|"Tailscale VPN IP"| TS_Mesh["Tailscale 虚拟内网"]
+    %% === 核心角色 ===
+    User(("👤 用户 / 管理员 (你)"))
 
-    %% 流量入口层
-    CF -->|"A记录解析 / 代理"| Aliyun_IP["阿里云公网 IP"]
-    
-    %% 服务器层 (阿里云轻量应用服务器)
-    subgraph Server ["阿里云 Linux 服务器"]
+    %% === 路径 A: 公网高速公路 (Public) ===
+    subgraph Public_Path ["🛣️ 路径 A: 公网访问 (通用)"]
         direction TB
-        FW["防火墙/安全组"] -->|"允许 80/443"| Nginx["Nginx (宝塔面板管理)"]
-        FW -->|"允许 UDP 41641"| TS_Node["Tailscale 守护进程"]
-        
-        %% 业务层
-        Nginx -->|"反向代理"| Website["你的网站/Web服务"]
-        Nginx -->|"反向代理"| API["后端接口"]
-        
-        %% 内网管理流
-        TS_Node <-->|".100.x.x.x"| SSH_Service["SSH 服务"]
-        TS_Node <-->|".100.x.x.x"| Baota_Panel["宝塔面板后台"]
+        CF["Cloudflare (CDN/WAF)"]
+        DirectIP["公网直接访问 (IP:端口)"]
     end
 
-    %% 内网设备层 (通过 Tailscale 连接)
-    subgraph Tailnet ["Tailscale Mesh 网络"]
-        TS_Mesh <--> TS_Node
-        TS_Mesh <--> Home_PC["家庭电脑"]
-        TS_Mesh <--> NAS["NAS 存储"]
-        TS_Mesh <--> Mobile["手机"]
+    %% === 路径 B: Tailscale 专用隧道 (Private) ===
+    subgraph Private_Path ["🔒 路径 B: Tailscale 隧道 (专用)"]
+        TS_Client["Tailscale 客户端 (你的电脑)"]
+        TS_Mesh["虚拟内网 Mesh"]
     end
 
-    %% 访问关系
-    UserAdmin -.->|"管理"| Baota_Panel
-    UserAdmin -.->|"SSH"| Server
+    %% === 阿里云服务器 ===
+    subgraph Aliyun ["☁️ 阿里云服务器 (目标)"]
+        direction TB
+        FW["阿里云防火墙"]
+        
+        %% 服务组件
+        Nginx["Nginx Web服务"]
+        Panel["宝塔面板后台"]
+        SSH["SSH 终端"]
+        
+        %% 内部连接点
+        Public_NIC["公网网卡 (Public IP)"]
+        TS_NIC["Tailscale 网卡 (100.x IP)"]
+    end
+
+    %% === 连线逻辑 ===
+    
+    %% 1. 公网访问流 (常规)
+    User -- "1. 访问域名 (HTTPS)" --> CF
+    CF -- "转发流量" --> Public_NIC
+    User -- "2. 直接访问 (IP:8888/22)" --> DirectIP
+    DirectIP --> Public_NIC
+    
+    Public_NIC -- "端口 80/443" --> Nginx
+    Public_NIC -- "端口 8888" --> Panel
+    Public_NIC -- "端口 22" --> SSH
+
+    %% 2. Tailscale 访问流 (备用/内网)
+    User -- "3. 开启 VPN" --> TS_Client
+    TS_Client --> TS_Mesh
+    TS_Mesh -- "穿透 UDP 41641" --> TS_NIC
+    
+    TS_NIC -- "内网 IP 直连" --> Panel
+    TS_NIC -- "内网 IP 直连" --> SSH
+    TS_NIC -- "内网 IP 访问" --> Nginx
+
+    %% === 样式美化 ===
+    style Public_Path fill:#e6f3ff,stroke:#333,stroke-dasharray: 5 5
+    style Private_Path fill:#e6fffa,stroke:#333,stroke-dasharray: 5 5
+    style Aliyun fill:#f9f9f9,stroke:#333,stroke-width:2px
 ```
 -----
 
